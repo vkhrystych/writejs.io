@@ -281,7 +281,7 @@ editor.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (multi) doMultiEdit("insert", "  ");
     else insertText("  ");
-  } else if (e.key === "Enter" && !multi) {
+  } else if (e.key === "Enter" && !multi && !mod) {
     const before = editor.value.slice(0, editor.selectionStart);
     const indent = (before.slice(before.lastIndexOf("\n") + 1).match(/^[ \t]*/) || [""])[0];
     if (indent) {
