@@ -56,7 +56,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  margin-right: 4px;
+  margin: 0 4px 0 0;
 }
 
 .brand em {

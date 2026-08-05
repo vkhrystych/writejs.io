@@ -3,8 +3,40 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>writejs.io</title>
+  <title>writejs.io — Online JavaScript Playground</title>
+  <meta name="description" content="Free online JavaScript playground. Write, format, and run JS in your browser with a live console, Prettier formatting on ⌘S, VS Code-style shortcuts, and 12 color themes." />
+  <link rel="canonical" href="https://writejs.io/" />
+  <meta name="theme-color" content="#12151c" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="writejs.io" />
+  <meta property="og:title" content="writejs.io — Online JavaScript Playground" />
+  <meta property="og:description" content="Write, format, and run JavaScript in your browser. Live console, Prettier formatting, VS Code-style shortcuts, 12 themes. Free, no signup." />
+  <meta property="og:url" content="https://writejs.io/" />
+  <meta property="og:image" content="https://writejs.io/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="writejs.io — Online JavaScript Playground" />
+  <meta name="twitter:description" content="Write, format, and run JavaScript in your browser. Live console, Prettier, VS Code-style shortcuts, 12 themes." />
+  <meta name="twitter:image" content="https://writejs.io/og.png" />
+
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "writejs.io",
+    "url": "https://writejs.io/",
+    "description": "Online JavaScript playground: write, format, and run JS in the browser with a live console and Prettier formatting.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Any",
+    "browserRequirements": "Requires JavaScript",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-NS5GDJB4HV"></script>
   <script>
@@ -22,7 +54,7 @@
 </head>
 <body>
   <header class="bar">
-    <span class="brand">write<em>js</em>.io</span>
+    <h1 class="brand">write<em>js</em>.io</h1>
     <span class="status" id="status"></span>
     <span class="hints">
       <label class="hint toggle" title="Format code on ⌘S">
@@ -57,5 +89,10 @@
       <div class="console" id="console" aria-live="polite"></div>
     </section>
   </main>
+
+  <noscript>
+    <p>writejs.io is an online JavaScript playground: write, format, and run JS
+    with a live console. It needs JavaScript enabled to work.</p>
+  </noscript>
 </body>
 </html>
