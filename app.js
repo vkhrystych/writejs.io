@@ -962,6 +962,9 @@ document.addEventListener("keydown", (e) => {
   } else if (e.key === "Enter") {
     e.preventDefault();
     runCode();
+  } else if (e.key === "l") {
+    e.preventDefault();
+    clearConsole();
   }
 });
 

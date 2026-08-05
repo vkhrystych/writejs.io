@@ -70,7 +70,7 @@
       {
         "@type": "Question",
         "name": "What keyboard shortcuts are available?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Cmd+Enter runs code, Cmd+S formats, Cmd+/ toggles comments, Cmd+D selects the next occurrence for multi-edit, Esc exits multi-select, Tab indents." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Cmd+Enter runs code, Cmd+S formats, Cmd+L clears the console, Cmd+/ toggles comments, Cmd+D selects the next occurrence for multi-edit, Esc exits multi-select, Tab indents." }
       }
     ]
   }
@@ -104,6 +104,7 @@
       <span class="hint"><span>comment</span> <kbd>⌘/</kbd></span>
       <span class="hint"><span>select</span> <kbd>⌘D</kbd></span>
       <span class="hint"><span>run</span> <kbd>⌘↩</kbd></span>
+      <span class="hint"><span>clear</span> <kbd>⌘L</kbd></span>
     </span>
     <select id="theme-select" aria-label="Color theme"></select>
     <button id="btn-format" type="button">Format</button>
@@ -206,9 +207,10 @@
         </details>
         <details>
           <summary>What keyboard shortcuts are available?</summary>
-          <p><kbd>⌘↩</kbd> run · <kbd>⌘S</kbd> format · <kbd>⌘/</kbd> toggle
-          comment · <kbd>⌘D</kbd> select next occurrence (multi-edit) ·
-          <kbd>Esc</kbd> exit multi-select · <kbd>Tab</kbd> indent.</p>
+          <p><kbd>⌘↩</kbd> run · <kbd>⌘S</kbd> format · <kbd>⌘L</kbd> clear
+          console · <kbd>⌘/</kbd> toggle comment · <kbd>⌘D</kbd> select next
+          occurrence (multi-edit) · <kbd>Esc</kbd> exit multi-select ·
+          <kbd>Tab</kbd> indent.</p>
         </details>
       </div>
 
