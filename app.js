@@ -661,7 +661,11 @@ function fmtValue(v, depth = 0, seen = new WeakSet()) {
   }
   if (t === "symbol") return span("v-literal", v.toString());
 
-  if (v instanceof Error) return escapeHtml(v.stack || `${v.name}: ${v.message}`);
+  // values come from the sandbox iframe, so instanceof against this
+  // window's constructors fails — use the realm-independent brand tag
+  const tag = Object.prototype.toString.call(v);
+  if (v instanceof Error || tag === "[object Error]" || tag === "[object DOMException]")
+    return escapeHtml(v.stack || `${v.name}: ${v.message}`);
   if (seen.has(v)) return span("v-literal", "[Circular]");
   if (depth > 3) return escapeHtml(Array.isArray(v) ? "[…]" : "{…}");
   seen.add(v);
@@ -671,18 +675,19 @@ function fmtValue(v, depth = 0, seen = new WeakSet()) {
     if (v.length > 100) items.push(`… ${v.length - 100} more`);
     return `[${items.join(", ")}]`;
   }
-  if (v instanceof Map) {
+  if (tag === "[object Map]") {
     const items = [...v].slice(0, 50).map(
       ([k, val]) => `${fmtValue(k, depth + 1, seen)} => ${fmtValue(val, depth + 1, seen)}`
     );
     return `Map(${v.size}) {${items.join(", ")}}`;
   }
-  if (v instanceof Set) {
+  if (tag === "[object Set]") {
     const items = [...v].slice(0, 50).map((x) => fmtValue(x, depth + 1, seen));
     return `Set(${v.size}) {${items.join(", ")}}`;
   }
-  if (v instanceof Date) return span("v-string", v.toISOString());
-  if (typeof Node !== "undefined" && v instanceof Node)
+  if (tag === "[object Date]")
+    return span("v-string", isNaN(+v) ? "Invalid Date" : v.toISOString());
+  if (typeof v.nodeType === "number" && typeof v.nodeName === "string")
     return escapeHtml(`<${(v.nodeName || "node").toLowerCase()}>`);
 
   const proto = Object.getPrototypeOf(v);
