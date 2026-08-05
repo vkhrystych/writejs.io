@@ -1,0 +1,631 @@
+"use strict";
+
+const editor = document.getElementById("editor");
+const highlightCode = document.getElementById("highlight-code");
+const highlightBox = document.getElementById("highlight");
+const gutter = document.getElementById("gutter");
+const consoleBox = document.getElementById("console");
+const statusEl = document.getElementById("status");
+const splitEl = document.getElementById("split");
+const dividerEl = document.getElementById("divider");
+
+const STORAGE_KEY = "jsrun.code";
+
+const DEFAULT_CODE = `// jsrun — write JS on the left, see results on the right
+// ⌘S formats, ⌘↩ (or Run) executes
+
+const fib = (n) => (n < 2 ? n : fib(n - 1) + fib(n - 2));
+
+console.log("fib(1..10):", Array.from({ length: 10 }, (_, i) => fib(i + 1)));
+
+const user = { name: "Vlad", tags: ["js", "hacking"], active: true };
+console.log(user);
+
+console.warn("warnings look like this");
+
+// last expression value is echoed back, REPL-style
+fib(20);
+`;
+
+/* ---------------- syntax highlight ---------------- */
+
+const KEYWORDS = new Set(
+  ("const let var function return if else for while do switch case break " +
+   "continue new delete typeof instanceof in of class extends super this " +
+   "import export from default try catch finally throw async await yield " +
+   "void static get set").split(" ")
+);
+const LITERALS = new Set(["true", "false", "null", "undefined", "NaN", "Infinity"]);
+
+const TOKEN_RE = new RegExp(
+  [
+    "(\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/)",                       // 1 comment
+    "(`(?:\\\\[\\s\\S]|[^`\\\\])*`|\"(?:\\\\.|[^\"\\\\\\n])*\"|'(?:\\\\.|[^'\\\\\\n])*')", // 2 string
+    "(\\b0[xXbBoO][0-9a-fA-F_]+\\b|\\b\\d[\\d_]*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b)",      // 3 number
+    "([A-Za-z_$][\\w$]*)",                                          // 4 word
+  ].join("|"),
+  "g"
+);
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function highlight(src) {
+  let out = "";
+  let last = 0;
+  for (const m of src.matchAll(TOKEN_RE)) {
+    out += escapeHtml(src.slice(last, m.index));
+    const [text] = m;
+    let cls = null;
+    if (m[1]) cls = "tok-comment";
+    else if (m[2]) cls = "tok-string";
+    else if (m[3]) cls = "tok-number";
+    else if (m[4]) {
+      if (KEYWORDS.has(text)) cls = "tok-keyword";
+      else if (LITERALS.has(text)) cls = "tok-literal";
+    }
+    out += cls ? `<span class="${cls}">${escapeHtml(text)}</span>` : escapeHtml(text);
+    last = m.index + text.length;
+  }
+  out += escapeHtml(src.slice(last));
+  return out;
+}
+
+function refresh() {
+  // trailing newline so the overlay's last line scrolls in sync with the textarea
+  highlightCode.innerHTML = highlight(editor.value) + "\n";
+  const lines = editor.value.split("\n").length;
+  gutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
+  syncScroll();
+}
+
+function syncScroll() {
+  highlightBox.scrollTop = editor.scrollTop;
+  highlightBox.scrollLeft = editor.scrollLeft;
+  marksEl.scrollTop = editor.scrollTop;
+  marksEl.scrollLeft = editor.scrollLeft;
+  gutter.scrollTop = editor.scrollTop;
+}
+
+editor.addEventListener("scroll", syncScroll);
+
+let saveTimer;
+editor.addEventListener("input", () => {
+  if (multi && !multiEditing) exitMulti();
+  refresh();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => localStorage.setItem(STORAGE_KEY, editor.value), 300);
+});
+
+/* ---------------- editing niceties ---------------- */
+
+function insertText(text) {
+  if (!document.execCommand("insertText", false, text)) {
+    editor.setRangeText(text, editor.selectionStart, editor.selectionEnd, "end");
+    editor.dispatchEvent(new Event("input"));
+  }
+}
+
+function toggleComment() {
+  const value = editor.value;
+  let { selectionStart: selStart, selectionEnd: selEnd } = editor;
+  const hadSelection = selEnd > selStart;
+
+  // full-line selections often end right after a newline — don't touch that next line
+  let effEnd = selEnd;
+  if (hadSelection && value[selEnd - 1] === "\n") effEnd = selEnd - 1;
+
+  const blockStart = value.lastIndexOf("\n", selStart - 1) + 1;
+  let blockEnd = value.indexOf("\n", effEnd);
+  if (blockEnd === -1) blockEnd = value.length;
+
+  const lines = value.slice(blockStart, blockEnd).split("\n");
+  const nonEmpty = lines.filter((l) => l.trim() !== "");
+  if (nonEmpty.length === 0) {
+    insertText("// ");
+    return;
+  }
+  const allCommented =
+    nonEmpty.length > 0 && nonEmpty.every((l) => /^\s*\/\//.test(l));
+
+  let firstDelta = 0;
+  let totalDelta = 0;
+  let newLines;
+  if (allCommented) {
+    newLines = lines.map((l, i) => {
+      const stripped = l.replace(/^(\s*)\/\/ ?/, "$1");
+      const d = stripped.length - l.length;
+      if (i === 0) firstDelta = d;
+      totalDelta += d;
+      return stripped;
+    });
+  } else {
+    const indent = Math.min(
+      ...nonEmpty.map((l) => l.match(/^[ \t]*/)[0].length)
+    );
+    newLines = lines.map((l, i) => {
+      if (l.trim() === "") return l;
+      const commented = l.slice(0, indent) + "// " + l.slice(indent);
+      if (i === 0) firstDelta = 3;
+      totalDelta += 3;
+      return commented;
+    });
+  }
+
+  editor.setSelectionRange(blockStart, blockEnd);
+  insertText(newLines.join("\n"));
+
+  const clamp = (n) => Math.max(blockStart, n);
+  if (hadSelection) {
+    editor.setSelectionRange(clamp(selStart + firstDelta), selEnd + totalDelta);
+  } else {
+    const caret = clamp(selStart + firstDelta);
+    editor.setSelectionRange(caret, caret);
+  }
+}
+
+editor.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key === "/") {
+    e.preventDefault();
+    toggleComment();
+  } else if (mod && e.key.toLowerCase() === "d") {
+    e.preventDefault();
+    cmdD();
+  } else if (e.key === "Escape") {
+    exitMulti();
+  } else if (e.key === "Tab" && !e.shiftKey) {
+    e.preventDefault();
+    if (multi) doMultiEdit("insert", "  ");
+    else insertText("  ");
+  } else if (e.key === "Enter" && !multi) {
+    const before = editor.value.slice(0, editor.selectionStart);
+    const indent = (before.slice(before.lastIndexOf("\n") + 1).match(/^[ \t]*/) || [""])[0];
+    if (indent) {
+      e.preventDefault();
+      insertText("\n" + indent);
+    }
+  } else if (multi && (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End" || (mod && e.key.toLowerCase() === "z"))) {
+    exitMulti();
+  }
+});
+
+/* ---------------- multi-select (⌘D, VS Code style) ---------------- */
+
+const marksEl = document.getElementById("marks");
+let multi = null; // { ranges: [{start,end}], primary: index }
+let multiEditing = false;
+
+function wordRangeAt(pos) {
+  const v = editor.value;
+  let s = pos;
+  let e = pos;
+  while (s > 0 && /[\w$]/.test(v[s - 1])) s--;
+  while (e < v.length && /[\w$]/.test(v[e])) e++;
+  return e > s ? { start: s, end: e } : null;
+}
+
+function findOccurrences(text, needle, wholeWord) {
+  const ranges = [];
+  let i = 0;
+  while ((i = text.indexOf(needle, i)) !== -1) {
+    const before = text[i - 1] || "";
+    const after = text[i + needle.length] || "";
+    if (!wholeWord || (!/[\w$]/.test(before) && !/[\w$]/.test(after))) {
+      ranges.push({ start: i, end: i + needle.length });
+    }
+    i += needle.length;
+  }
+  return ranges;
+}
+
+function renderMarks() {
+  if (!multi) {
+    marksEl.innerHTML = "";
+    return;
+  }
+  const v = editor.value;
+  let html = "";
+  let last = 0;
+  for (const r of multi.ranges) {
+    html += escapeHtml(v.slice(last, r.start));
+    html += r.start === r.end
+      ? '<span class="mark caret"></span>'
+      : `<span class="mark">${escapeHtml(v.slice(r.start, r.end))}</span>`;
+    last = r.end;
+  }
+  html += escapeHtml(v.slice(last)) + "\n";
+  marksEl.innerHTML = html;
+  syncScroll();
+}
+
+function exitMulti() {
+  if (!multi) return;
+  multi = null;
+  marksEl.innerHTML = "";
+}
+
+function cmdD() {
+  const { selectionStart: s, selectionEnd: e } = editor;
+  if (s === e) {
+    const r = wordRangeAt(s);
+    if (r) editor.setSelectionRange(r.start, r.end);
+    return;
+  }
+  const needle = editor.value.slice(s, e);
+  if (!needle.trim() || needle.includes("\n")) return;
+  const wholeWord = /^[\w$]+$/.test(needle);
+  const ranges = findOccurrences(editor.value, needle, wholeWord);
+  if (ranges.length < 2) {
+    flashStatus("only match");
+    return;
+  }
+  multi = { ranges, primary: ranges.findIndex((r) => r.start === s) };
+  if (multi.primary === -1) multi.primary = 0;
+  renderMarks();
+  flashStatus(`${ranges.length} selected — type to edit all, Esc to exit`);
+}
+
+function applyMultiEdit(value, ranges, type, data) {
+  let out = "";
+  let last = 0;
+  let shift = 0;
+  const newRanges = [];
+  for (const r of ranges) {
+    let s = Math.max(r.start, last);
+    let end = Math.max(r.end, s);
+    let insert = "";
+    if (type === "insert") insert = data;
+    else if (type === "deleteBackward" && s === end) s = Math.max(last, s - 1);
+    else if (type === "deleteForward" && s === end) end = Math.min(value.length, end + 1);
+    out += value.slice(last, s) + insert;
+    const caret = s + shift + insert.length;
+    newRanges.push({ start: caret, end: caret });
+    shift += insert.length - (end - s);
+    last = end;
+  }
+  out += value.slice(last);
+  return { value: out, ranges: newRanges };
+}
+
+function doMultiEdit(type, data) {
+  const res = applyMultiEdit(editor.value, multi.ranges, type, data);
+  multiEditing = true;
+  editor.setSelectionRange(0, editor.value.length);
+  document.execCommand("insertText", false, res.value);
+  if (editor.value !== res.value) {
+    editor.value = res.value;
+    editor.dispatchEvent(new Event("input"));
+  }
+  multiEditing = false;
+  multi.ranges = res.ranges;
+  const p = res.ranges[Math.min(multi.primary, res.ranges.length - 1)];
+  editor.setSelectionRange(p.start, p.end);
+  renderMarks();
+}
+
+editor.addEventListener("beforeinput", (e) => {
+  if (!multi || multiEditing) return;
+  let type = null;
+  let data = "";
+  if (e.inputType === "insertText" || e.inputType === "insertFromPaste") {
+    type = "insert";
+    data = e.data ?? (e.dataTransfer ? e.dataTransfer.getData("text/plain") : "");
+  } else if (e.inputType === "insertLineBreak") {
+    type = "insert";
+    data = "\n";
+  } else if (e.inputType === "deleteContentBackward") {
+    type = "deleteBackward";
+  } else if (e.inputType === "deleteContentForward") {
+    type = "deleteForward";
+  } else {
+    exitMulti();
+    return;
+  }
+  e.preventDefault();
+  doMultiEdit(type, data);
+});
+
+editor.addEventListener("mousedown", exitMulti);
+
+/* ---------------- console rendering ---------------- */
+
+function span(cls, text) {
+  return `<span class="${cls}">${escapeHtml(text)}</span>`;
+}
+
+function fmtValue(v, depth = 0, seen = new WeakSet()) {
+  const t = typeof v;
+  if (v === null) return span("v-literal", "null");
+  if (t === "undefined") return span("v-literal", "undefined");
+  if (t === "boolean") return span("v-literal", String(v));
+  if (t === "number" || t === "bigint") return span("v-number", String(v));
+  if (t === "string")
+    return depth === 0 ? escapeHtml(v) : span("v-string", JSON.stringify(v));
+  if (t === "function") {
+    const name = v.name ? ` ${v.name}` : "";
+    return span("v-fn", `ƒ${name}()`);
+  }
+  if (t === "symbol") return span("v-literal", v.toString());
+
+  if (v instanceof Error) return escapeHtml(v.stack || `${v.name}: ${v.message}`);
+  if (seen.has(v)) return span("v-literal", "[Circular]");
+  if (depth > 3) return escapeHtml(Array.isArray(v) ? "[…]" : "{…}");
+  seen.add(v);
+
+  if (Array.isArray(v)) {
+    const items = v.slice(0, 100).map((x) => fmtValue(x, depth + 1, seen));
+    if (v.length > 100) items.push(`… ${v.length - 100} more`);
+    return `[${items.join(", ")}]`;
+  }
+  if (v instanceof Map) {
+    const items = [...v].slice(0, 50).map(
+      ([k, val]) => `${fmtValue(k, depth + 1, seen)} => ${fmtValue(val, depth + 1, seen)}`
+    );
+    return `Map(${v.size}) {${items.join(", ")}}`;
+  }
+  if (v instanceof Set) {
+    const items = [...v].slice(0, 50).map((x) => fmtValue(x, depth + 1, seen));
+    return `Set(${v.size}) {${items.join(", ")}}`;
+  }
+  if (v instanceof Date) return span("v-string", v.toISOString());
+  if (typeof Node !== "undefined" && v instanceof Node)
+    return escapeHtml(`<${(v.nodeName || "node").toLowerCase()}>`);
+
+  const proto = Object.getPrototypeOf(v);
+  const ctor = proto && proto.constructor && proto.constructor.name;
+  const label = ctor && ctor !== "Object" ? ctor + " " : "";
+  const entries = Object.entries(v).slice(0, 50).map(
+    ([k, val]) => `${span("v-key", k)}: ${fmtValue(val, depth + 1, seen)}`
+  );
+  return `${escapeHtml(label)}{ ${entries.join(", ")} }`;
+}
+
+const TAGS = { log: "›", info: "i", warn: "▲", error: "✕", result: "◂" };
+
+function addEntry(kind, args, { raw = false } = {}) {
+  const empty = consoleBox.querySelector(".console-empty");
+  if (empty) empty.remove();
+  const el = document.createElement("div");
+  el.className = `entry ${kind}`;
+  const body = raw
+    ? escapeHtml(args.join(" "))
+    : args.map((a) => fmtValue(a)).join(" ");
+  el.innerHTML = `<span class="tag">${TAGS[kind] || "›"}</span><span class="msg">${
+    kind === "result" ? `<span class="val">${body}</span>` : body
+  }</span>`;
+  consoleBox.appendChild(el);
+  consoleBox.scrollTop = consoleBox.scrollHeight;
+}
+
+function clearConsole() {
+  consoleBox.innerHTML = '<div class="console-empty">Console is empty — run some code.</div>';
+}
+
+/* ---------------- running ---------------- */
+
+let sandbox = null;
+
+function makeSandbox() {
+  if (sandbox) sandbox.remove();
+  sandbox = document.createElement("iframe");
+  sandbox.style.display = "none";
+  document.body.appendChild(sandbox);
+  const w = sandbox.contentWindow;
+
+  const hook = (method, kind) => {
+    const orig = w.console[method].bind(w.console);
+    w.console[method] = (...args) => {
+      addEntry(kind, args);
+      orig(...args);
+    };
+  };
+  hook("log", "log");
+  hook("info", "info");
+  hook("debug", "log");
+  hook("warn", "warn");
+  hook("error", "error");
+
+  w.addEventListener("error", (e) => {
+    addEntry("error", [e.error || e.message], { raw: !e.error });
+  });
+  w.addEventListener("unhandledrejection", (e) => {
+    addEntry("error", [e.reason]);
+  });
+  return w;
+}
+
+function runCode() {
+  const code = editor.value;
+  const w = makeSandbox();
+  try {
+    const result = w.eval(code);
+    if (result !== undefined) addEntry("result", [result]);
+    if (result instanceof w.Promise || result instanceof Promise) {
+      result.then(
+        (v) => v !== undefined && addEntry("result", [v]),
+        () => {} // surfaced via unhandledrejection hook
+      );
+    }
+  } catch (err) {
+    // top-level await needs an async wrapper
+    if (err instanceof w.SyntaxError && /await/.test(code)) {
+      w.eval(`(async () => {\n${code}\n})()`).catch((e) => addEntry("error", [e]));
+    } else {
+      addEntry("error", [err]);
+    }
+  }
+}
+
+/* ---------------- formatting ---------------- */
+
+let statusTimer;
+function flashStatus(text, isError = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle("err", isError);
+  statusEl.classList.add("show");
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => statusEl.classList.remove("show"), 1600);
+}
+
+async function formatCode() {
+  exitMulti();
+  try {
+    const { formatted, cursorOffset } = await prettier.formatWithCursor(editor.value, {
+      cursorOffset: editor.selectionStart,
+      parser: "babel",
+      plugins: [prettierPlugins.babel, prettierPlugins.estree],
+    });
+    if (formatted !== editor.value) {
+      const { scrollTop } = editor;
+      editor.value = formatted;
+      editor.setSelectionRange(cursorOffset, cursorOffset);
+      editor.scrollTop = scrollTop;
+      refresh();
+      localStorage.setItem(STORAGE_KEY, formatted);
+    }
+    flashStatus("Formatted");
+  } catch (err) {
+    const firstLine = String(err.message || err).split("\n")[0];
+    flashStatus("Syntax error", true);
+    addEntry("error", [`Format failed — ${firstLine}`], { raw: true });
+  }
+}
+
+/* ---------------- color themes ---------------- */
+
+const THEMES = {
+  "jsrun": { label: "jsrun (default)", scheme: "dark", vars: {
+    "--ground": "#12151c", "--panel": "#181d27", "--panel-edge": "#232a38",
+    "--ink": "#d7dce6", "--muted": "#69738a", "--accent": "#e8a15c", "--accent-ink": "#1a1208",
+    "--syn-keyword": "#8fb8f2", "--syn-string": "#9ece8c", "--syn-number": "#d6a26e",
+    "--syn-comment": "#565f74", "--syn-literal": "#c79bd8" } },
+  "one-dark": { label: "One Dark", scheme: "dark", vars: {
+    "--ground": "#282c34", "--panel": "#21252b", "--panel-edge": "#3a3f4b",
+    "--ink": "#abb2bf", "--muted": "#5c6370", "--accent": "#61afef", "--accent-ink": "#10151b",
+    "--syn-keyword": "#c678dd", "--syn-string": "#98c379", "--syn-number": "#d19a66",
+    "--syn-comment": "#5c6370", "--syn-literal": "#56b6c2" } },
+  "dracula": { label: "Dracula", scheme: "dark", vars: {
+    "--ground": "#282a36", "--panel": "#21222c", "--panel-edge": "#44475a",
+    "--ink": "#f8f8f2", "--muted": "#6272a4", "--accent": "#bd93f9", "--accent-ink": "#171522",
+    "--syn-keyword": "#ff79c6", "--syn-string": "#f1fa8c", "--syn-number": "#bd93f9",
+    "--syn-comment": "#6272a4", "--syn-literal": "#bd93f9" } },
+  "monokai": { label: "Monokai", scheme: "dark", vars: {
+    "--ground": "#272822", "--panel": "#1e1f1a", "--panel-edge": "#3e3d32",
+    "--ink": "#f8f8f2", "--muted": "#75715e", "--accent": "#a6e22e", "--accent-ink": "#171a10",
+    "--syn-keyword": "#f92672", "--syn-string": "#e6db74", "--syn-number": "#ae81ff",
+    "--syn-comment": "#75715e", "--syn-literal": "#ae81ff" } },
+  "github-dark": { label: "GitHub Dark", scheme: "dark", vars: {
+    "--ground": "#0d1117", "--panel": "#161b22", "--panel-edge": "#30363d",
+    "--ink": "#c9d1d9", "--muted": "#8b949e", "--accent": "#58a6ff", "--accent-ink": "#0b1524",
+    "--syn-keyword": "#ff7b72", "--syn-string": "#a5d6ff", "--syn-number": "#79c0ff",
+    "--syn-comment": "#8b949e", "--syn-literal": "#79c0ff" } },
+  "github-light": { label: "GitHub Light", scheme: "light", vars: {
+    "--ground": "#ffffff", "--panel": "#f6f8fa", "--panel-edge": "#d0d7de",
+    "--ink": "#24292f", "--muted": "#6e7781", "--accent": "#0969da", "--accent-ink": "#ffffff",
+    "--syn-keyword": "#cf222e", "--syn-string": "#0a3069", "--syn-number": "#0550ae",
+    "--syn-comment": "#6e7781", "--syn-literal": "#0550ae",
+    "--error": "#c43a4f", "--warn": "#8a6d0b", "--ok": "#2f7d32" } },
+  "solarized-dark": { label: "Solarized Dark", scheme: "dark", vars: {
+    "--ground": "#002b36", "--panel": "#073642", "--panel-edge": "#0e4956",
+    "--ink": "#93a1a1", "--muted": "#586e75", "--accent": "#268bd2", "--accent-ink": "#ffffff",
+    "--syn-keyword": "#859900", "--syn-string": "#2aa198", "--syn-number": "#d33682",
+    "--syn-comment": "#586e75", "--syn-literal": "#b58900" } },
+  "solarized-light": { label: "Solarized Light", scheme: "light", vars: {
+    "--ground": "#fdf6e3", "--panel": "#eee8d5", "--panel-edge": "#d9d2c0",
+    "--ink": "#657b83", "--muted": "#93a1a1", "--accent": "#268bd2", "--accent-ink": "#ffffff",
+    "--syn-keyword": "#859900", "--syn-string": "#2aa198", "--syn-number": "#d33682",
+    "--syn-comment": "#93a1a1", "--syn-literal": "#b58900",
+    "--error": "#c43a4f", "--warn": "#8a6d0b", "--ok": "#2f7d32" } },
+  "nord": { label: "Nord", scheme: "dark", vars: {
+    "--ground": "#2e3440", "--panel": "#272c36", "--panel-edge": "#434c5e",
+    "--ink": "#d8dee9", "--muted": "#616e88", "--accent": "#88c0d0", "--accent-ink": "#142226",
+    "--syn-keyword": "#81a1c1", "--syn-string": "#a3be8c", "--syn-number": "#b48ead",
+    "--syn-comment": "#616e88", "--syn-literal": "#b48ead" } },
+  "gruvbox-dark": { label: "Gruvbox Dark", scheme: "dark", vars: {
+    "--ground": "#282828", "--panel": "#1d2021", "--panel-edge": "#504945",
+    "--ink": "#ebdbb2", "--muted": "#928374", "--accent": "#fabd2f", "--accent-ink": "#1d1a10",
+    "--syn-keyword": "#fb4934", "--syn-string": "#b8bb26", "--syn-number": "#d3869b",
+    "--syn-comment": "#928374", "--syn-literal": "#d3869b" } },
+  "tokyo-night": { label: "Tokyo Night", scheme: "dark", vars: {
+    "--ground": "#1a1b26", "--panel": "#16161e", "--panel-edge": "#2f334d",
+    "--ink": "#c0caf5", "--muted": "#565f89", "--accent": "#7aa2f7", "--accent-ink": "#12162b",
+    "--syn-keyword": "#bb9af7", "--syn-string": "#9ece6a", "--syn-number": "#ff9e64",
+    "--syn-comment": "#565f89", "--syn-literal": "#ff9e64" } },
+};
+
+const THEME_DEFAULTS = { "--error": "#e0687a", "--warn": "#d9b45a", "--ok": "#8fbe7f" };
+const themeSelect = document.getElementById("theme-select");
+
+for (const [key, t] of Object.entries(THEMES)) {
+  const opt = document.createElement("option");
+  opt.value = key;
+  opt.textContent = t.label;
+  themeSelect.appendChild(opt);
+}
+
+function applyTheme(name) {
+  const t = THEMES[name] || THEMES.jsrun;
+  const root = document.documentElement.style;
+  for (const [k, v] of Object.entries({ ...THEME_DEFAULTS, ...t.vars })) {
+    root.setProperty(k, v);
+  }
+  root.colorScheme = t.scheme;
+  themeSelect.value = name in THEMES ? name : "jsrun";
+  localStorage.setItem("jsrun.theme", themeSelect.value);
+}
+
+themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
+
+/* ---------------- format-on-save toggle ---------------- */
+
+const fmtToggle = document.getElementById("fmt-toggle");
+fmtToggle.checked = localStorage.getItem("jsrun.formatOnSave") !== "0";
+fmtToggle.addEventListener("change", () => {
+  localStorage.setItem("jsrun.formatOnSave", fmtToggle.checked ? "1" : "0");
+});
+
+/* ---------------- wiring ---------------- */
+
+document.getElementById("btn-run").addEventListener("click", runCode);
+document.getElementById("btn-format").addEventListener("click", formatCode);
+document.getElementById("btn-clear").addEventListener("click", clearConsole);
+
+document.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (!mod) return;
+  if (e.key === "s") {
+    e.preventDefault();
+    if (fmtToggle.checked) formatCode();
+    else flashStatus("auto-format is off");
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    runCode();
+  }
+});
+
+/* divider drag */
+dividerEl.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  dividerEl.classList.add("dragging");
+  const onMove = (ev) => {
+    const rect = splitEl.getBoundingClientRect();
+    const pct = Math.min(80, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
+    document.documentElement.style.setProperty("--editor-w", pct + "%");
+  };
+  const onUp = () => {
+    dividerEl.classList.remove("dragging");
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+  };
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+});
+
+/* init */
+applyTheme(localStorage.getItem("jsrun.theme") || "jsrun");
+editor.value = localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CODE;
+refresh();
+clearConsole();
+editor.focus();

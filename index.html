@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>jsrun</title>
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="vendor/prettier.js"></script>
+  <script defer src="vendor/prettier-babel.js"></script>
+  <script defer src="vendor/prettier-estree.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <span class="brand">js<em>run</em></span>
+    <span class="status" id="status"></span>
+    <span class="hints">
+      <label class="hint toggle" title="Format code on ⌘S">
+        <input type="checkbox" id="fmt-toggle" checked />
+        <span>format</span>
+        <kbd>⌘S</kbd>
+      </label>
+      <span class="hint"><span>comment</span> <kbd>⌘/</kbd></span>
+      <span class="hint"><span>select</span> <kbd>⌘D</kbd></span>
+      <span class="hint"><span>run</span> <kbd>⌘↩</kbd></span>
+    </span>
+    <select id="theme-select" aria-label="Color theme"></select>
+    <button id="btn-format" type="button">Format</button>
+    <button id="btn-clear" type="button">Clear</button>
+    <button id="btn-run" type="button" class="primary">Run</button>
+  </header>
+
+  <main class="split" id="split">
+    <section class="pane editor-pane">
+      <div class="gutter" id="gutter" aria-hidden="true"></div>
+      <div class="editor-stack">
+        <pre class="marks" id="marks" aria-hidden="true"></pre>
+        <pre class="highlight" id="highlight" aria-hidden="true"><code id="highlight-code"></code></pre>
+        <textarea id="editor" spellcheck="false" autocomplete="off"
+          autocapitalize="off" aria-label="JavaScript code"></textarea>
+      </div>
+    </section>
+
+    <div class="divider" id="divider" role="separator" aria-orientation="vertical"></div>
+
+    <section class="pane console-pane">
+      <div class="console" id="console" aria-live="polite"></div>
+    </section>
+  </main>
+</body>
+</html>
