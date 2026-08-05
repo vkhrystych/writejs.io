@@ -265,6 +265,7 @@ button.primary:hover { filter: brightness(1.08); }
 .tok-number  { color: var(--syn-number); }
 .tok-comment { color: var(--syn-comment); font-style: italic; }
 .tok-literal { color: var(--syn-literal); }
+.tok-interp  { color: var(--syn-keyword); }
 
 /* ---------- console ---------- */
 

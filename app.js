@@ -40,7 +40,7 @@ const LITERALS = new Set(["true", "false", "null", "undefined", "NaN", "Infinity
 const TOKEN_RE = new RegExp(
   [
     "(\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/)",                       // 1 comment
-    "(`(?:\\\\[\\s\\S]|[^`\\\\])*`|\"(?:\\\\.|[^\"\\\\\\n])*\"|'(?:\\\\.|[^'\\\\\\n])*')", // 2 string
+    "(`|\"(?:\\\\.|[^\"\\\\\\n])*\"|'(?:\\\\.|[^'\\\\\\n])*')",     // 2 string / template start
     "(\\b0[xXbBoO][0-9a-fA-F_]+\\b|\\b\\d[\\d_]*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b)",      // 3 number
     "([A-Za-z_$][\\w$]*)",                                          // 4 word
   ].join("|"),
@@ -51,12 +51,81 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// index just past the closing backtick of a template starting at `start`
+function scanTemplate(src, start) {
+  let i = start + 1;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "\\") { i += 2; continue; }
+    if (c === "`") return i + 1;
+    if (c === "$" && src[i + 1] === "{") {
+      let depth = 1;
+      i += 2;
+      while (i < src.length && depth > 0) {
+        if (src[i] === "\\") { i += 2; continue; }
+        if (src[i] === "`") { i = scanTemplate(src, i); continue; }
+        if (src[i] === "{") depth++;
+        else if (src[i] === "}") depth--;
+        i++;
+      }
+      continue;
+    }
+    i++;
+  }
+  return src.length;
+}
+
+function stringSpan(s) {
+  return `<span class="tok-string">${escapeHtml(s)}</span>`;
+}
+
+// template literal → string chunks + recursively highlighted ${expressions}
+function highlightTemplate(tpl) {
+  let out = "";
+  let i = 0;
+  let chunkStart = 0;
+  while (i < tpl.length) {
+    if (tpl[i] === "\\") { i += 2; continue; }
+    if (tpl[i] === "$" && tpl[i + 1] === "{") {
+      out += stringSpan(tpl.slice(chunkStart, i));
+      let depth = 1;
+      let j = i + 2;
+      while (j < tpl.length && depth > 0) {
+        if (tpl[j] === "\\") { j += 2; continue; }
+        if (tpl[j] === "`") { j = scanTemplate(tpl, j); continue; }
+        if (tpl[j] === "{") depth++;
+        else if (tpl[j] === "}") depth--;
+        j++;
+      }
+      const closed = depth === 0;
+      out += '<span class="tok-interp">${</span>' +
+        highlight(tpl.slice(i + 2, closed ? j - 1 : j)) +
+        (closed ? '<span class="tok-interp">}</span>' : "");
+      chunkStart = j;
+      i = j;
+      continue;
+    }
+    i++;
+  }
+  out += stringSpan(tpl.slice(chunkStart));
+  return out;
+}
+
 function highlight(src) {
   let out = "";
   let last = 0;
-  for (const m of src.matchAll(TOKEN_RE)) {
+  TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = TOKEN_RE.exec(src))) {
     out += escapeHtml(src.slice(last, m.index));
     const [text] = m;
+    if (text === "`") {
+      const end = scanTemplate(src, m.index);
+      out += highlightTemplate(src.slice(m.index, end));
+      TOKEN_RE.lastIndex = end;
+      last = end;
+      continue;
+    }
     let cls = null;
     if (m[1]) cls = "tok-comment";
     else if (m[2]) cls = "tok-string";
@@ -186,10 +255,43 @@ editor.addEventListener("keydown", (e) => {
       e.preventDefault();
       insertText("\n" + indent);
     }
+  } else if (QUOTES.has(e.key) && !multi && !mod && !e.altKey) {
+    const { selectionStart: s, selectionEnd: en } = editor;
+    const v = editor.value;
+    if (s === en && v[s] === e.key) {
+      // closing quote already there — type over it
+      e.preventDefault();
+      editor.setSelectionRange(s + 1, s + 1);
+    } else if (s !== en) {
+      // wrap the selection
+      e.preventDefault();
+      const inner = v.slice(s, en);
+      insertText(e.key + inner + e.key);
+      editor.setSelectionRange(s + 1, s + 1 + inner.length);
+    } else if (!(e.key === "'" && /[\w$]/.test(v[s - 1] || ""))) {
+      // insert a pair, caret in the middle — but plain apostrophes (don't) stay single
+      e.preventDefault();
+      insertText(e.key + e.key);
+      editor.setSelectionRange(s + 1, s + 1);
+    }
+  } else if (e.key === "Backspace" && !multi && !mod) {
+    const { selectionStart: s, selectionEnd: en } = editor;
+    const v = editor.value;
+    if (s === en && s > 0 && QUOTES.has(v[s - 1]) && v[s] === v[s - 1]) {
+      // backspace inside an empty pair removes both quotes
+      e.preventDefault();
+      editor.setSelectionRange(s - 1, s + 1);
+      if (!document.execCommand("delete")) {
+        editor.setRangeText("", s - 1, s + 1, "end");
+        editor.dispatchEvent(new Event("input"));
+      }
+    }
   } else if (multi && (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End" || (mod && e.key.toLowerCase() === "z"))) {
     exitMulti();
   }
 });
+
+const QUOTES = new Set(['"', "'", "`"]);
 
 /* ---------------- multi-select (⌘D, VS Code style) ---------------- */
 
