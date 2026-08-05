@@ -168,59 +168,7 @@ function syncScroll() {
   marksEl.scrollTop = editor.scrollTop;
   marksEl.scrollLeft = editor.scrollLeft;
   gutter.scrollTop = editor.scrollTop;
-  updateCaret();
 }
-
-/* ---------------- vim-style block caret ---------------- */
-
-const caretEl = document.createElement("div");
-caretEl.className = "block-caret";
-document.querySelector(".editor-stack").appendChild(caretEl);
-
-const cell = { w: 8, h: 22, padX: 16, padY: 12 };
-
-function measureCell() {
-  const cs = getComputedStyle(editor);
-  cell.h = parseFloat(cs.lineHeight);
-  cell.padX = parseFloat(cs.paddingLeft);
-  cell.padY = parseFloat(cs.paddingTop);
-  const ctx = (measureCell.canvas ||= document.createElement("canvas")).getContext("2d");
-  ctx.font = `${cs.fontSize} ${cs.fontFamily}`;
-  cell.w = ctx.measureText("M").width;
-}
-
-function updateCaret() {
-  const focused = document.activeElement === editor;
-  const collapsed = editor.selectionStart === editor.selectionEnd;
-  if (!focused || !collapsed) {
-    caretEl.style.display = "none";
-    return;
-  }
-  const pos = editor.selectionStart;
-  const before = editor.value.slice(0, pos);
-  const line = (before.match(/\n/g) || []).length;
-  const col = pos - before.lastIndexOf("\n") - 1;
-  const x = cell.padX + col * cell.w - editor.scrollLeft;
-  const y = cell.padY + line * cell.h - editor.scrollTop;
-  caretEl.style.width = cell.w + "px";
-  caretEl.style.height = cell.h + "px";
-  caretEl.style.transform = `translate(${x}px, ${y}px)`;
-  caretEl.style.display = "block";
-  // retrigger the blink cycle so the caret is solid right after moving
-  caretEl.style.animation = "none";
-  void caretEl.offsetWidth;
-  caretEl.style.animation = "";
-}
-
-document.addEventListener("selectionchange", () => {
-  if (document.activeElement === editor) updateCaret();
-});
-editor.addEventListener("focus", updateCaret);
-editor.addEventListener("blur", updateCaret);
-window.addEventListener("resize", () => {
-  measureCell();
-  updateCaret();
-});
 
 editor.addEventListener("scroll", syncScroll);
 
@@ -803,7 +751,6 @@ dividerEl.addEventListener("mousedown", (e) => {
 
 /* init */
 applyTheme(localStorage.getItem("writejs.theme") || "writejs");
-measureCell();
 const savedSplit = parseFloat(localStorage.getItem("writejs.split"));
 if (!Number.isNaN(savedSplit)) setSplit(Math.min(80, Math.max(20, savedSplit)));
 editor.value = localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CODE;
