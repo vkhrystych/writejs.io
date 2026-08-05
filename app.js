@@ -792,6 +792,7 @@ function makeSandbox() {
 }
 
 function runCode() {
+  clearConsole();
   const code = editor.value;
   const w = makeSandbox();
   try {
