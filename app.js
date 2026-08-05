@@ -491,6 +491,15 @@ const AC_MEMBERS = [...new Set((
   "test exec match matchAll search"
 ).split(" "))];
 
+const AC_MEMBER_SET = new Set(AC_MEMBERS);
+const AC_PROP_MEMBERS = new Set(["length", "size", "name"]);
+const AC_KW_PAREN = new Set(["if", "for", "while", "switch"]);
+const AC_GLOBAL_FNS = new Set((
+  "parseInt parseFloat isNaN isFinite fetch setTimeout setInterval " +
+  "clearTimeout clearInterval structuredClone queueMicrotask " +
+  "requestAnimationFrame alert"
+).split(" "));
+
 let ac = null; // { items, index, start, token }
 let acAccepting = false;
 let acMetrics = null;
@@ -530,13 +539,34 @@ function acCandidates(token, start, member) {
     [...KEYWORDS, ...LITERALS, ...AC_GLOBALS].forEach(push);
   }
 
+  // names that look callable in the document: `foo(`, `foo = (`, `foo = x =>`
+  const callable = new Set();
+  for (const re of [
+    /([A-Za-z_$][\w$]+)\s*\(/g,
+    /([A-Za-z_$][\w$]+)\s*=\s*(?:async\s*)?(?:function\b|\()/g,
+    /([A-Za-z_$][\w$]+)\s*=\s*(?:async\s*)?[\w$]+\s*=>/g,
+  ]) {
+    let m;
+    while ((m = re.exec(doc))) callable.add(m[1]);
+  }
+  const kindFor = (w) => {
+    if (AC_PROP_MEMBERS.has(w)) return "";
+    if (member) return AC_MEMBER_SET.has(w) || callable.has(w) ? "fn" : "";
+    if (AC_KW_PAREN.has(w)) return "kw";
+    if (KEYWORDS.has(w) || LITERALS.has(w)) return "";
+    return AC_GLOBAL_FNS.has(w) || callable.has(w) ? "fn" : "";
+  };
+
   const lower = token.toLowerCase();
   const exact = [];
   const loose = [];
   for (const w of pool) {
-    if (w === token) continue;
-    if (w.startsWith(token)) exact.push(w);
-    else if (token && w.toLowerCase().startsWith(lower)) loose.push(w);
+    const kind = kindFor(w);
+    // a fully-typed word is only worth suggesting if accepting it adds parens
+    if (w === token && !kind) continue;
+    const item = { w, kind };
+    if (w.startsWith(token)) exact.push(item);
+    else if (token && w.toLowerCase().startsWith(lower)) loose.push(item);
   }
   return [...exact, ...loose].slice(0, 8);
 }
@@ -558,13 +588,15 @@ function acRender() {
     if (!acEl.children[i]) acEl.appendChild(document.createElement("div"));
   });
   while (acEl.children.length > ac.items.length) acEl.lastChild.remove();
-  ac.items.forEach((w, i) => {
+  ac.items.forEach((item, i) => {
     const el = acEl.children[i];
     el.className = "ac-item" + (i === ac.index ? " active" : "");
     el.dataset.i = i;
     el.innerHTML =
-      `<b>${escapeHtml(w.slice(0, ac.token.length))}</b>` +
-      escapeHtml(w.slice(ac.token.length));
+      `<b>${escapeHtml(item.w.slice(0, ac.token.length))}</b>` +
+      escapeHtml(item.w.slice(ac.token.length)) +
+      (item.kind === "fn" ? '<span class="ac-fn">()</span>'
+        : item.kind === "kw" ? '<span class="ac-fn"> ()</span>' : "");
   });
   acEl.hidden = false;
   acPosition();
@@ -613,12 +645,18 @@ function acMove(dir) {
 
 function acAccept(i = ac.index) {
   const { start, token } = ac;
-  const word = ac.items[i];
+  const { w, kind } = ac.items[i];
   acClose();
-  if (word === token) return;
+  const nextCh = editor.value[start + token.length];
+  const addParens = kind && nextCh !== "(";
+  if (w === token && !addParens) return;
   acAccepting = true;
   editor.setSelectionRange(start, start + token.length);
-  insertText(word);
+  insertText(addParens ? w + (kind === "kw" ? " ()" : "()") : w);
+  if (addParens) {
+    const p = editor.selectionStart - 1;
+    editor.setSelectionRange(p, p);
+  }
   acAccepting = false;
 }
 

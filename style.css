@@ -295,6 +295,8 @@ button.primary:hover { filter: brightness(1.08); }
   color: var(--accent);
 }
 
+.ac-item .ac-fn { color: var(--muted); }
+
 .ac-item:hover,
 .ac-item.active { background: var(--panel-edge); }
 
