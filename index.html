@@ -37,6 +37,44 @@
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
   </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "How do I run JavaScript code online?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Type or paste your code into the editor and press Cmd+Enter (or click Run). Console logs, return values, and errors appear in the console on the right." }
+      },
+      {
+        "@type": "Question",
+        "name": "Is writejs.io free?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes, completely free, with no account and no limits. It's a static page — everything runs locally in your browser." }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I format my JavaScript code?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Press Cmd+S or click Format. Code is formatted with Prettier and your cursor position is preserved. Format-on-save can be disabled with the toolbar checkbox." }
+      },
+      {
+        "@type": "Question",
+        "name": "Is my code saved if I close the tab?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. The editor content, theme, and settings are saved to your browser's local storage automatically. Nothing is uploaded anywhere." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does it support modern JavaScript (ES6+)?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes — code runs directly in your browser's engine, so arrow functions, template literals, destructuring, async/await (including top-level await), and classes all work." }
+      },
+      {
+        "@type": "Question",
+        "name": "What keyboard shortcuts are available?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Cmd+Enter runs code, Cmd+S formats, Cmd+/ toggles comments, Cmd+D selects the next occurrence for multi-edit, Esc exits multi-select, Tab indents." }
+      }
+    ]
+  }
+  </script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-NS5GDJB4HV"></script>
   <script>
@@ -53,6 +91,7 @@
   <script defer src="app.js"></script>
 </head>
 <body>
+  <div class="app">
   <header class="bar">
     <h1 class="brand">write<em>js</em>.io</h1>
     <span class="status" id="status"></span>
@@ -89,6 +128,94 @@
       <div class="console" id="console" aria-live="polite"></div>
     </section>
   </main>
+  </div>
+
+  <section class="page" id="about">
+    <div class="page-inner">
+      <h2>A JavaScript playground that stays out of your way</h2>
+      <p class="lead">
+        writejs.io is a free online JavaScript editor and console. Open the page,
+        type code, hit <kbd>⌘↩</kbd> — the result appears instantly on the right.
+        No signup, no project setup, no waiting.
+      </p>
+
+      <div class="features">
+        <div class="feature">
+          <h3>Live console</h3>
+          <p>Runs your code in a sandboxed iframe and pretty-prints logs, objects,
+          errors, and promise results — like the browser DevTools console.</p>
+        </div>
+        <div class="feature">
+          <h3>Prettier built in</h3>
+          <p>Press <kbd>⌘S</kbd> and your code is formatted with Prettier,
+          keeping your cursor in place. Toggle it off any time.</p>
+        </div>
+        <div class="feature">
+          <h3>VS Code-style shortcuts</h3>
+          <p><kbd>⌘/</kbd> toggles comments, <kbd>⌘D</kbd> selects the next
+          occurrence and edits all of them at once, quotes auto-close.</p>
+        </div>
+        <div class="feature">
+          <h3>12 color themes</h3>
+          <p>One Dark, Dracula, Monokai, GitHub, Solarized, Nord, Gruvbox,
+          Oceanic Next, Tokyo Night and more — your pick is remembered.</p>
+        </div>
+        <div class="feature">
+          <h3>Modern JavaScript</h3>
+          <p>ES6+ syntax highlighting including template literals with
+          <code>${ }</code> interpolation, plus top-level <code>await</code>.</p>
+        </div>
+        <div class="feature">
+          <h3>Private by default</h3>
+          <p>Your code is saved to your browser's local storage and never leaves
+          your machine. Close the tab, come back — it's still there.</p>
+        </div>
+      </div>
+
+      <h2>FAQ</h2>
+      <div class="faq">
+        <details>
+          <summary>How do I run JavaScript code online?</summary>
+          <p>Type or paste your code into the editor on the left and press
+          <kbd>⌘↩</kbd> (or click Run). The output — console logs, return values,
+          and errors — appears in the console on the right.</p>
+        </details>
+        <details>
+          <summary>Is writejs.io free?</summary>
+          <p>Yes, completely free, with no account and no limits. It's a static
+          page — everything runs locally in your browser.</p>
+        </details>
+        <details>
+          <summary>How do I format my JavaScript code?</summary>
+          <p>Press <kbd>⌘S</kbd> or click Format. Code is formatted with Prettier
+          and your cursor position is preserved. You can disable format-on-save
+          with the checkbox in the toolbar.</p>
+        </details>
+        <details>
+          <summary>Is my code saved if I close the tab?</summary>
+          <p>Yes. The editor content, theme, and settings are saved to your
+          browser's local storage automatically, so everything is restored when
+          you come back. Nothing is uploaded anywhere.</p>
+        </details>
+        <details>
+          <summary>Does it support modern JavaScript (ES6+)?</summary>
+          <p>Yes — your code runs directly in your browser's engine, so anything
+          your browser supports works: arrow functions, template literals,
+          destructuring, async/await (including top-level await), classes, and more.</p>
+        </details>
+        <details>
+          <summary>What keyboard shortcuts are available?</summary>
+          <p><kbd>⌘↩</kbd> run · <kbd>⌘S</kbd> format · <kbd>⌘/</kbd> toggle
+          comment · <kbd>⌘D</kbd> select next occurrence (multi-edit) ·
+          <kbd>Esc</kbd> exit multi-select · <kbd>Tab</kbd> indent.</p>
+        </details>
+      </div>
+
+      <footer class="page-footer">
+        <p>writejs.io — write, format, and run JavaScript in your browser.</p>
+      </footer>
+    </div>
+  </section>
 
   <noscript>
     <p>writejs.io is an online JavaScript playground: write, format, and run JS
