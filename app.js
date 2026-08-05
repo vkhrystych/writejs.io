@@ -170,12 +170,16 @@ function syncScroll() {
   gutter.scrollTop = editor.scrollTop;
 }
 
-editor.addEventListener("scroll", syncScroll);
+editor.addEventListener("scroll", () => {
+  syncScroll();
+  if (ac) acPosition();
+});
 
 let saveTimer;
-editor.addEventListener("input", () => {
+editor.addEventListener("input", (e) => {
   if (multi && !multiEditing) exitMulti();
   refresh();
+  acOnInput(e);
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => localStorage.setItem(STORAGE_KEY, editor.value), 300);
 });
@@ -249,6 +253,22 @@ function toggleComment() {
 
 editor.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
+  if (ac && !mod && !e.altKey) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      acMove(e.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (e.key === "Tab" || e.key === "Enter") {
+      e.preventDefault();
+      acAccept();
+      return;
+    }
+    if (e.key === "Escape") {
+      acClose();
+      return;
+    }
+  }
   if (mod && e.key === "/") {
     e.preventDefault();
     toggleComment();
@@ -442,7 +462,184 @@ editor.addEventListener("beforeinput", (e) => {
   doMultiEdit(type, data);
 });
 
-editor.addEventListener("mousedown", exitMulti);
+editor.addEventListener("mousedown", () => {
+  exitMulti();
+  acClose();
+});
+
+/* ---------------- autocomplete ---------------- */
+
+const acEl = document.getElementById("ac");
+
+const AC_GLOBALS = (
+  "console Math JSON Object Array String Number Boolean Promise Date RegExp " +
+  "Map Set WeakMap WeakSet Symbol BigInt Error TypeError RangeError parseInt " +
+  "parseFloat isNaN isFinite fetch setTimeout setInterval clearTimeout " +
+  "clearInterval structuredClone queueMicrotask requestAnimationFrame " +
+  "document window navigator localStorage sessionStorage alert"
+).split(" ");
+
+const AC_MEMBERS = [...new Set((
+  "log warn error info table debug map filter reduce forEach find findIndex " +
+  "some every includes indexOf lastIndexOf slice splice push pop shift unshift " +
+  "join concat flat flatMap fill sort reverse keys values entries length " +
+  "toString toFixed toPrecision split replace replaceAll trim trimStart trimEnd " +
+  "toUpperCase toLowerCase startsWith endsWith padStart padEnd repeat charAt " +
+  "charCodeAt at then catch finally stringify parse assign freeze fromEntries " +
+  "floor ceil round abs min max random sqrt pow sign trunc now getTime " +
+  "toISOString add has get set delete clear size name apply call bind " +
+  "test exec match matchAll search"
+).split(" "))];
+
+let ac = null; // { items, index, start, token }
+let acAccepting = false;
+let acMetrics = null;
+
+function acTokenAt(pos) {
+  const before = editor.value.slice(0, pos);
+  const token = (before.match(/([A-Za-z_$][\w$]*)?$/)[1] || "");
+  const start = pos - token.length;
+  return { token, start, member: editor.value[start - 1] === "." };
+}
+
+function acCandidates(token, start, member) {
+  const value = editor.value;
+  // words already in the document, minus the one being typed
+  const doc = value.slice(0, start) + " " + value.slice(start + token.length);
+  const freq = new Map();
+  for (const w of doc.match(/[A-Za-z_$][\w$]+/g) || []) {
+    if (!KEYWORDS.has(w) && !LITERALS.has(w)) freq.set(w, (freq.get(w) || 0) + 1);
+  }
+  const pool = [];
+  const seen = new Set();
+  const push = (w) => {
+    if (!seen.has(w)) {
+      seen.add(w);
+      pool.push(w);
+    }
+  };
+  const docWords = [...freq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([w]) => w);
+  if (member) {
+    // after a dot, known methods first — doc words are mostly noise there
+    AC_MEMBERS.forEach(push);
+    docWords.forEach(push);
+  } else {
+    docWords.forEach(push);
+    [...KEYWORDS, ...LITERALS, ...AC_GLOBALS].forEach(push);
+  }
+
+  const lower = token.toLowerCase();
+  const exact = [];
+  const loose = [];
+  for (const w of pool) {
+    if (w === token) continue;
+    if (w.startsWith(token)) exact.push(w);
+    else if (token && w.toLowerCase().startsWith(lower)) loose.push(w);
+  }
+  return [...exact, ...loose].slice(0, 8);
+}
+
+function acUpdate() {
+  if (multi) return acClose();
+  const pos = editor.selectionStart;
+  if (pos !== editor.selectionEnd) return acClose();
+  const { token, start, member } = acTokenAt(pos);
+  if (!member && !token) return acClose();
+  const items = acCandidates(token, start, member);
+  if (!items.length) return acClose();
+  ac = { items, index: 0, start, token };
+  acRender();
+}
+
+function acRender() {
+  ac.items.forEach((w, i) => {
+    if (!acEl.children[i]) acEl.appendChild(document.createElement("div"));
+  });
+  while (acEl.children.length > ac.items.length) acEl.lastChild.remove();
+  ac.items.forEach((w, i) => {
+    const el = acEl.children[i];
+    el.className = "ac-item" + (i === ac.index ? " active" : "");
+    el.dataset.i = i;
+    el.innerHTML =
+      `<b>${escapeHtml(w.slice(0, ac.token.length))}</b>` +
+      escapeHtml(w.slice(ac.token.length));
+  });
+  acEl.hidden = false;
+  acPosition();
+  const active = acEl.children[ac.index];
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+function acPosition() {
+  if (!acMetrics) {
+    const cs = getComputedStyle(editor);
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = `${cs.fontSize} ${cs.fontFamily}`;
+    acMetrics = {
+      charW: ctx.measureText("M").width,
+      lineH: parseFloat(cs.lineHeight),
+      padL: parseFloat(cs.paddingLeft),
+      padT: parseFloat(cs.paddingTop),
+    };
+  }
+  const before = editor.value.slice(0, ac.start);
+  const line = (before.match(/\n/g) || []).length;
+  const col = ac.start - (before.lastIndexOf("\n") + 1);
+  const stack = editor.parentElement;
+  const { charW, lineH, padL, padT } = acMetrics;
+
+  let x = padL + col * charW - editor.scrollLeft;
+  let y = padT + (line + 1) * lineH - editor.scrollTop + 2;
+  x = Math.max(0, Math.min(x, stack.clientWidth - acEl.offsetWidth - 4));
+  const above = padT + line * lineH - editor.scrollTop - acEl.offsetHeight - 2;
+  if (y + acEl.offsetHeight > stack.clientHeight && above > 0) y = above;
+  acEl.style.left = x + "px";
+  acEl.style.top = y + "px";
+}
+
+function acClose() {
+  if (ac) {
+    ac = null;
+    acEl.hidden = true;
+  }
+}
+
+function acMove(dir) {
+  ac.index = (ac.index + dir + ac.items.length) % ac.items.length;
+  acRender();
+}
+
+function acAccept(i = ac.index) {
+  const { start, token } = ac;
+  const word = ac.items[i];
+  acClose();
+  if (word === token) return;
+  acAccepting = true;
+  editor.setSelectionRange(start, start + token.length);
+  insertText(word);
+  acAccepting = false;
+}
+
+function acOnInput(e) {
+  if (acAccepting || multi) return acClose();
+  if (e.inputType === "insertText" && e.data && /^[\w$.]$/.test(e.data)) {
+    acUpdate();
+  } else if (ac && e.inputType === "deleteContentBackward") {
+    acUpdate();
+  } else {
+    acClose();
+  }
+}
+
+acEl.addEventListener("mousedown", (e) => {
+  e.preventDefault(); // keep the editor focused
+  const item = e.target.closest(".ac-item");
+  if (item) acAccept(+item.dataset.i);
+});
+
+editor.addEventListener("blur", acClose);
 
 /* ---------------- console rendering ---------------- */
 

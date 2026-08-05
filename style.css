@@ -265,6 +265,39 @@ button.primary:hover { filter: brightness(1.08); }
   color: transparent;
 }
 
+.ac {
+  position: absolute;
+  z-index: 10;
+  min-width: 160px;
+  max-width: 300px;
+  max-height: 178px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 3px 0;
+}
+
+.ac-item {
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ac-item b {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.ac-item:hover,
+.ac-item.active { background: var(--panel-edge); }
+
 .tok-keyword { color: var(--syn-keyword); }
 .tok-string  { color: var(--syn-string); }
 .tok-number  { color: var(--syn-number); }
