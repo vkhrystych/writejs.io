@@ -9,9 +9,22 @@ const statusEl = document.getElementById("status");
 const splitEl = document.getElementById("split");
 const dividerEl = document.getElementById("divider");
 
-const STORAGE_KEY = "jsrun.code";
+const STORAGE_KEY = "writejs.code";
 
-const DEFAULT_CODE = `// jsrun — write JS on the left, see results on the right
+// carry over state saved under the old jsrun.* keys
+for (const [oldKey, newKey] of [
+  ["jsrun.code", "writejs.code"],
+  ["jsrun.theme", "writejs.theme"],
+  ["jsrun.formatOnSave", "writejs.formatOnSave"],
+]) {
+  const v = localStorage.getItem(oldKey);
+  if (v !== null && localStorage.getItem(newKey) === null) {
+    localStorage.setItem(newKey, v === "jsrun" ? "writejs" : v);
+  }
+  localStorage.removeItem(oldKey);
+}
+
+const DEFAULT_CODE = `// writejs.io — write JS on the left, see results on the right
 // ⌘S formats, ⌘↩ (or Run) executes
 
 const fib = (n) => (n < 2 ? n : fib(n - 1) + fib(n - 2));
@@ -598,7 +611,7 @@ async function formatCode() {
 /* ---------------- color themes ---------------- */
 
 const THEMES = {
-  "jsrun": { label: "jsrun (default)", scheme: "dark", vars: {
+  "writejs": { label: "writejs (default)", scheme: "dark", vars: {
     "--ground": "#12151c", "--panel": "#181d27", "--panel-edge": "#232a38",
     "--ink": "#d7dce6", "--muted": "#69738a", "--accent": "#e8a15c", "--accent-ink": "#1a1208",
     "--syn-keyword": "#8fb8f2", "--syn-string": "#9ece8c", "--syn-number": "#d6a26e",
@@ -650,6 +663,11 @@ const THEMES = {
     "--ink": "#ebdbb2", "--muted": "#928374", "--accent": "#fabd2f", "--accent-ink": "#1d1a10",
     "--syn-keyword": "#fb4934", "--syn-string": "#b8bb26", "--syn-number": "#d3869b",
     "--syn-comment": "#928374", "--syn-literal": "#d3869b" } },
+  "oceanic-next": { label: "Oceanic Next", scheme: "dark", vars: {
+    "--ground": "#1b2b34", "--panel": "#16232a", "--panel-edge": "#343d46",
+    "--ink": "#cdd3de", "--muted": "#65737e", "--accent": "#5fb3b3", "--accent-ink": "#10201f",
+    "--syn-keyword": "#c594c5", "--syn-string": "#99c794", "--syn-number": "#f99157",
+    "--syn-comment": "#65737e", "--syn-literal": "#f99157" } },
   "tokyo-night": { label: "Tokyo Night", scheme: "dark", vars: {
     "--ground": "#1a1b26", "--panel": "#16161e", "--panel-edge": "#2f334d",
     "--ink": "#c0caf5", "--muted": "#565f89", "--accent": "#7aa2f7", "--accent-ink": "#12162b",
@@ -668,14 +686,14 @@ for (const [key, t] of Object.entries(THEMES)) {
 }
 
 function applyTheme(name) {
-  const t = THEMES[name] || THEMES.jsrun;
+  const t = THEMES[name] || THEMES.writejs;
   const root = document.documentElement.style;
   for (const [k, v] of Object.entries({ ...THEME_DEFAULTS, ...t.vars })) {
     root.setProperty(k, v);
   }
   root.colorScheme = t.scheme;
-  themeSelect.value = name in THEMES ? name : "jsrun";
-  localStorage.setItem("jsrun.theme", themeSelect.value);
+  themeSelect.value = name in THEMES ? name : "writejs";
+  localStorage.setItem("writejs.theme", themeSelect.value);
 }
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
@@ -683,9 +701,9 @@ themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
 /* ---------------- format-on-save toggle ---------------- */
 
 const fmtToggle = document.getElementById("fmt-toggle");
-fmtToggle.checked = localStorage.getItem("jsrun.formatOnSave") !== "0";
+fmtToggle.checked = localStorage.getItem("writejs.formatOnSave") !== "0";
 fmtToggle.addEventListener("change", () => {
-  localStorage.setItem("jsrun.formatOnSave", fmtToggle.checked ? "1" : "0");
+  localStorage.setItem("writejs.formatOnSave", fmtToggle.checked ? "1" : "0");
 });
 
 /* ---------------- wiring ---------------- */
@@ -708,16 +726,22 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* divider drag */
+function setSplit(pct) {
+  document.documentElement.style.setProperty("--editor-w", pct + "%");
+}
+
 dividerEl.addEventListener("mousedown", (e) => {
   e.preventDefault();
   dividerEl.classList.add("dragging");
+  let pct = null;
   const onMove = (ev) => {
     const rect = splitEl.getBoundingClientRect();
-    const pct = Math.min(80, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
-    document.documentElement.style.setProperty("--editor-w", pct + "%");
+    pct = Math.min(80, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
+    setSplit(pct);
   };
   const onUp = () => {
     dividerEl.classList.remove("dragging");
+    if (pct !== null) localStorage.setItem("writejs.split", pct.toFixed(1));
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
   };
@@ -726,7 +750,9 @@ dividerEl.addEventListener("mousedown", (e) => {
 });
 
 /* init */
-applyTheme(localStorage.getItem("jsrun.theme") || "jsrun");
+applyTheme(localStorage.getItem("writejs.theme") || "writejs");
+const savedSplit = parseFloat(localStorage.getItem("writejs.split"));
+if (!Number.isNaN(savedSplit)) setSplit(Math.min(80, Math.max(20, savedSplit)));
 editor.value = localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CODE;
 refresh();
 clearConsole();
